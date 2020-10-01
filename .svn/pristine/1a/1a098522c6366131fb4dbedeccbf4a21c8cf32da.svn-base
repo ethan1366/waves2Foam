@@ -1,0 +1,125 @@
+#!/bin/bash 
+
+## Making sure that prepareCase.sh is executable
+if [ ! -x "bin/prepareCase.sh" ]
+then
+    chmod a+x bin/prepareCase.sh
+fi
+
+## Make sure that bashrc is executable
+if [ ! -f "./bin/bashrc" ]
+then
+    cp ./bin/bashrc.org ./bin/bashrc
+    chmod a+x ./bin/bashrc
+fi
+
+## Set environmental variables
+. ./bin/bashrc
+
+## Check if WAVES_DIR exists
+if [ ! -d "$WAVES_DIR" ]
+then
+    echo ""
+    echo "FATAL ERROR."
+    echo "    The directory path "$WAVES_DIR "does not exist."
+    echo "    Correct the path in bin/bashrc"
+    echo ""
+    echo "    This means that you should correct the environmental variable \$WAVES_DIR"
+    echo "    such that it is pointed (in absolute sense) to the path, where waves2Foam"
+    echo "    is located."
+    echo ""
+    echo "    Please note that once bin/bashrc is created, bin/bashrc.org is only an"
+    echo "    inactive file. The latter is also the only of the two files, which is"
+    echo "    updated through the SVN-repository."
+    echo ""
+    echo "EXITING"
+    echo ""
+
+    exit
+fi
+
+## LIBRARY
+echo "====================================="
+echo "    COMPILE LIBRARY"
+echo "====================================="
+( cd src; ./Allwmake )
+
+## SOLVERS
+# Find all solver names in $WAVES_SOL
+echo ""
+echo "====================================="
+echo "    COMPILE SOLVERS"
+echo "====================================="
+solvers=`ls -d $WAVES_SOL/*`
+
+# Loop over the solver names
+for s in $solvers
+do
+    solverName=`basename $s`
+
+    # Correct options file if extend branch or not
+    if [ "$EXTBRANCH" -eq "1" ]
+    then
+        if [ "$FOAMEXTENDPROJECT" -eq "0" ]
+        then
+            rm -f $WAVES_SOL/$solverName/Make/options
+            ln -s -f $WAVES_SOL/$solverName/Make/options.ext $WAVES_SOL/$apps/$solverName/Make/options
+        fi
+    else
+        if [ -f $WAVES_SOL/$solverName/Make/options.reg ]
+        then
+            rm -f $WAVES_SOL/$solverName/Make/options
+            ln -s -f $WAVES_SOL/$solverName/Make/options.reg $WAVES_SOL/$apps/$solverName/Make/options
+        fi
+    fi
+
+    # Compile the solver
+    ( cd $WAVES_SOL/$solverName; wmake )
+done
+
+## UTILITIES
+# Pre-processing utilities
+echo ""
+echo "====================================="
+echo "    COMPILE PRE-PROCESSING"
+echo "====================================="
+foamOpenFOAM="$WAVES_PRE/faceSetToSTL $WAVES_PRE/waveGaugesNProbes $WAVES_POST/postProcessWaves2Foam"
+
+for i in $foamOpenFOAM
+do
+    rm -f $i/Make/options
+
+    if [ "$FOAMEXTENDPROJECT" -eq "0" ]
+    then
+        ln -s -f $i/Make/options.OpenFOAM $i/Make/options
+    else
+        ln -s -f $i/Make/options.foam $i/Make/options
+    fi
+done
+
+( cd $WAVES_PRE  && wmake all )
+
+# Post-processing utilities
+echo ""
+echo "====================================="
+echo "    COMPILE POST-PROCESSING"
+echo "====================================="
+rm -f $WAVES_POST/surfaceElevation/Make/options
+
+if [ "$EXTBRANCH" -eq "1" ]
+then
+    ln -s -f $WAVES_POST/surfaceElevation/Make/options.210 $WAVES_POST/surfaceElevation/Make/options
+elif [ "$WM_PROJECT_VERSION_NUMBER" -lt "220" ]
+then
+    ln -s -f $WAVES_POST/surfaceElevation/Make/options.210 $WAVES_POST/surfaceElevation/Make/options
+else
+    ln -s -f $WAVES_POST/surfaceElevation/Make/options.220 $WAVES_POST/surfaceElevation/Make/options
+fi
+
+( cd $WAVES_POST && wmake all )
+
+echo ""
+echo "====================================="
+echo "    COMPILATION DONE"
+echo "====================================="
+echo ""
